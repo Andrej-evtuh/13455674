@@ -83,16 +83,19 @@ def matchVehicles(currentFrameVehicles, im_width, im_height, image):
     if len(vehicles) == 0:
         for box, color in currentFrameVehicles:
             (y1, x1, y2, x2) = box
+            # пересчитываем координаты боксов на координаты боксов на фрейме при этом пересчитываем х, у, высота,ширина
             (x, y, w, h) = (
                 x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
+            # координаты центроида
             X = int((x + x + w) / 2)
             Y = int((y + y + h) / 2)
+            # условие пересечения последней верхней линии, если машина не пересекла линию:
             if Y > yl5:
                 # cv2.circle(image,(X,Y),2,(0,255,0),4)
                 # print('Y=',Y,'  y1=',yl1)
                 vehicles.append(vehicle((x, y, w, h)))
 
-
+    # если в vehicles есть обьекты:
     else:
         for i in range(len(vehicles)):
             vehicles[i].setCurrentFrameMatch(False)
@@ -103,6 +106,9 @@ def matchVehicles(currentFrameVehicles, im_width, im_height, image):
                 x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
             # print((x1*im_width,y1*im_height,x2*im_width,y2*im_height),'\n',(x,y,w,h))
             index = 0
+            # растояние между points используется для проверки на сопоставление: тот-же автомобиль отслеживается или
+            # это другой автомобиль, используются: distance, и diagonal; в классе vehicles для этого
+            # используют методы: updatePosition, setCurrentFrameMatch, getTracking, getNext... и тд.
             ldistance = 999999999999999999999999.9
             X = int((x + x + w) / 2)
             Y = int((y + y + h) / 2)
@@ -142,7 +148,7 @@ def matchVehicles(currentFrameVehicles, im_width, im_height, image):
 
 
 # print(len(vehicles))
-pool = ThreadPool(processes=1)
+#pool = ThreadPool(processes=1)
 
 
 def checkRedLightCrossed(img):
@@ -233,7 +239,8 @@ vs = WebcamVideoStream(src='Set01_video01.mp4').start()
 
 cap = cv2.VideoCapture('C:\\Users\Andrej\\aPytonWork\\traffic_01.avi')  # 0 stands for very first webcam attach
 
-ret, imgF = cap.read(0)
+for i in range(22):
+    ret, imgF = cap.read(0)
 imgF = Image.fromarray(imgF)
 im_width, im_height = imgF.size
 xl1 = 0
@@ -348,7 +355,9 @@ def main(sess=sesser):
 
         matchVehicles(coords, im_width, im_height, imgF)
         checkRedLightCrossed(imgF)
-        checkSpeed(fTime, img)
+        #checkSpeed(fTime, img)
+    # для каждого из обьектов(машина), после того как информация о нём была обновлена (matchVehicles), рисуются все его
+        # поинты (точки центроидов).
         for v in vehicles:
             if v.getTracking() == True:
 

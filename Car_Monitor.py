@@ -1,3 +1,6 @@
+import collections
+from typing import List, Any
+
 import numpy as np
 import os
 import six.moves.urllib as urllib
@@ -25,6 +28,7 @@ import cv2
 import tkinter as tk
 from PIL import Image
 from PIL import ImageTk
+import PIL.ImageDraw as ImageDraw
 import json
 import re
 
@@ -74,81 +78,111 @@ def getLicensePlateNumber(filer):
 	except ApiException as e:
 	    print("Exception: \n", e)
 '''
+
+trackers = []
 vehicles = []
 count = 0
 
 
 def matchVehicles(currentFrameVehicles, im_width, im_height, image):
-    # если список машин пустой
-    if len(vehicles) == 0:
-        for box, color in currentFrameVehicles:
-            (y1, x1, y2, x2) = box
-            # пересчитываем координаты боксов на координаты боксов на фрейме при этом пересчитываем х, у, высота,ширина
-            (x, y, w, h) = (
-                x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
-            # координаты центроида
-            X = int((x + x + w) / 2)
-            Y = int((y + y + h) / 2)
-            # условие пересечения последней верхней линии, если машина не пересекла линию:
-            if Y > yl5:
+    # обьявление этой функции предназначено для унификации моего подхода(currentFrameVehicles (box)), 
+    # с старым подходом (currentFrameVehicles(box+colors)). Сделано это потому, что currentFrameVehicles(box+colors) 
+    # передаёт дополнительный параметр color, кроме этого координаты передаются не нормализированные и в не подходящем 
+    # формате
+    def do_work_if_vehicles_empty(x, y, w, h):
+        # координаты центроида
+        X = int((x + x + w) / 2)
+        Y = int((y + y + h) / 2)
+        # условие пересечения последней верхней линии, если машина не пересекла линию:
+        if Y > yl5:
+            # cv2.circle(image,(X,Y),2,(0,255,0),4)
+            # print('Y=',Y,'  y1=',yl1)
+            vehicles.append(vehicle((x, y, w, h)))
+
+    def do_work_if_vehicles_full(x, y, w, h):
+        index = 0
+        # растояние между points используется для проверки на сопоставление: тот-же автомобиль отслеживается или
+        # это другой автомобиль, используются: distance, и diagonal; в классе vehicles для этого
+        # используют методы: updatePosition, setCurrentFrameMatch, getTracking, getNext... и тд.
+        ldistance = 999999999999999999999999.9
+        X = int((x + x + w) / 2)
+        Y = int((y + y + h) / 2)
+        if Y > yl5:
+            # print('Y=',Y,'  y1=',yl1)
+            # cv2.circle(image,(X,Y),4,(0,0,255),8)
+            # проверяем какая точка из боксов соответствует какому обьекту vehicle
+            for i in range(len(vehicles)):
+                if vehicles[i].getTracking() == True:
+                    # print(vehicles[i].getNext(),i)
+                    # distance разница между предсказанным центром обьекта, и фактическими координатами центра бокса,
+                    # если растояние между ними меньше чем диагональ обьекта, значит новая точка относится к текущему
+                    # обьекту, если нет, то точка относится к другому обьекту (к другой машине)
+                    distance = ((X - vehicles[i].getNext()[0]) ** 2 + (Y - vehicles[i].getNext()[1]) ** 2) ** 0.5
+
+                    if distance < ldistance:
+                        ldistance = distance
+                        index = i
+
+            diagonal = vehicles[index].diagonal
+
+            # если растояние между точками меньше чем диагональ бокса, для обьекта добавляем новый центр и новую диагональ
+            if ldistance < diagonal:
+                vehicles[index].updatePosition((x, y, w, h))
+                vehicles[index].setCurrentFrameMatch(True)
+            # если нет, создаём новый обьект класса vehicle и добавляем его в лист vehicles
+            else:
+                # blue for last position
+                # cv2.circle(image,tuple(vehicles[index].points[-1]),2,(255,0,0),4)
+                # red for predicted point
+                # cv2.circle(image,tuple(vehicles[index].getNext()),2,(0,0,255),2)
+                # green for test point
                 # cv2.circle(image,(X,Y),2,(0,255,0),4)
-                # print('Y=',Y,'  y1=',yl1)
+
+                # cv2.imshow('culprit',image)
+                # time.sleep(5)
+                # print(diagonal,'               ',ldistance)
                 vehicles.append(vehicle((x, y, w, h)))
 
-    # если в vehicles есть обьекты:
+    # если список машин пустой
+    if len(vehicles) == 0:
+        # проверка на адекватность currentFrameVehicles подходу с использованием трэкеров или старому.
+        if not isinstance(currentFrameVehicles, list):
+            for box, color in currentFrameVehicles:
+                (y1, x1, y2, x2) = box
+                # пересчитываем координаты боксов на координаты боксов на фрейме при этом пересчитываем х, у, высота,ширина
+                (x, y, w, h) = (
+                    x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
+                do_work_if_vehicles_empty((x, y, w, h))
+        # при использовании трэкера координаты идут нормализированные в нужном нам формате
+        else:
+            for box in currentFrameVehicles:
+                (x, y, w, h) = box
+                do_work_if_vehicles_empty(x, y, w, h)
+
+    # если в vehicles есть обьекты, для каждого обьекта vehicles:
     else:
         for i in range(len(vehicles)):
             vehicles[i].setCurrentFrameMatch(False)
-            vehicles[i].predictNext()
-        for box, color in currentFrameVehicles:
-            (y1, x1, y2, x2) = box
-            (x, y, w, h) = (
-                x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
-            # print((x1*im_width,y1*im_height,x2*im_width,y2*im_height),'\n',(x,y,w,h))
-            index = 0
-            # растояние между points используется для проверки на сопоставление: тот-же автомобиль отслеживается или
-            # это другой автомобиль, используются: distance, и diagonal; в классе vehicles для этого
-            # используют методы: updatePosition, setCurrentFrameMatch, getTracking, getNext... и тд.
-            ldistance = 999999999999999999999999.9
-            X = int((x + x + w) / 2)
-            Y = int((y + y + h) / 2)
-            if Y > yl5:
-                # print('Y=',Y,'  y1=',yl1)
-                # cv2.circle(image,(X,Y),4,(0,0,255),8)
-                for i in range(len(vehicles)):
-                    if vehicles[i].getTracking() == True:
-                        # print(vehicles[i].getNext(),i)
-                        distance = ((X - vehicles[i].getNext()[0]) ** 2 + (Y - vehicles[i].getNext()[1]) ** 2) ** 0.5
-
-                        if distance < ldistance:
-                            ldistance = distance
-                            index = i
-
-                diagonal = vehicles[index].diagonal
-
-                if ldistance < diagonal:
-                    vehicles[index].updatePosition((x, y, w, h))
-                    vehicles[index].setCurrentFrameMatch(True)
-                else:
-                    # blue for last position
-                    # cv2.circle(image,tuple(vehicles[index].points[-1]),2,(255,0,0),4)
-                    # red for predicted point
-                    # cv2.circle(image,tuple(vehicles[index].getNext()),2,(0,0,255),2)
-                    # green for test point
-                    # cv2.circle(image,(X,Y),2,(0,255,0),4)
-
-                    # cv2.imshow('culprit',image)
-                    # time.sleep(5)
-                    # print(diagonal,'               ',ldistance)
-                    vehicles.append(vehicle((x, y, w, h)))
-
+            vehicles[i].predictNext()  # предсказание где будет следующий центр обьекта
         for i in range(len(vehicles)):
             if vehicles[i].getCurrentFrameMatch() == False:
                 vehicles[i].increaseFrameNotFound()
+            if not isinstance(currentFrameVehicles, list):
+                for box, color in currentFrameVehicles:
+                    (y1, x1, y2, x2) = box
+                    # пересчитываем координаты боксов на координаты боксов на фрейме при этом пересчитываем х, у, высота,ширина
+                    (x, y, w, h) = (
+                        x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
+                    do_work_if_vehicles_full(x, y, w, h)
+            # при использовании трэкера координаты идут нормализированные в нужном нам формате
+            else:
+                for box in currentFrameVehicles:
+                    (x, y, w, h) = box
+                    do_work_if_vehicles_full(x, y, w, h)
 
 
 # print(len(vehicles))
-#pool = ThreadPool(processes=1)
+# pool = ThreadPool(processes=1)
 
 
 def checkRedLightCrossed(img):
@@ -166,11 +200,14 @@ def checkRedLightCrossed(img):
                 w, h = img2.size
                 asprto = w / h
                 frame2 = cv2.resize(frame2, (250, int(250 / asprto)))
-                cv2image2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGBA)
+                cv2.imshow('BROKE', bimg)
+                #cv2image2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGBA)
+                '''
                 img2 = Image.fromarray(cv2image2)
                 imgtk2 = ImageTk.PhotoImage(image=img2)
                 display2.imgtk = imgtk2  # Shows frame for display 1
                 display2.configure(image=imgtk2)
+                '''
                 # cv2.imshow('BROKE',bimg)
                 name = 'Rule Breakers/culprit' + str(time.time()) + '.jpg'
                 cv2.imwrite(name, bimg)
@@ -185,6 +222,39 @@ def checkRedLightCrossed(img):
 
 
 # display3.configure(text=count)
+
+
+def checkRegionCrossed(img):
+    global count
+    for v in vehicles:
+        if v.crossed == False and len(v.points) >= 2:
+            x1, y1 = v.points[0]
+            x2, y2 = v.points[-1]
+            if y1 > yl3 and y2 < yl3:
+                count += 1
+                v.crossed = True
+                bimg = img[int(v.rect[1]):int(v.rect[1] + v.rect[3]), int(v.rect[0]):int(v.rect[0] + v.rect[2])]
+                frame2 = bimg
+                img2 = Image.fromarray(frame2)
+                w, h = img2.size
+                asprto = w / h
+                frame2 = cv2.resize(frame2, (250, int(250 / asprto)))
+                cv2.imshow('Alarm', frame2)
+
+                name = 'Rule Breakers/culprit' + str(time.time()) + '.jpg'
+                cv2.imwrite(name, bimg)
+
+                '''
+                tstop = threading.Event()
+                thread = threading.Thread(target=getLicensePlateNumber, args=(name,))
+                thread.daemon = True
+                thread.start()
+                '''
+            # cv2.imwrite('culprit.png',bimg)
+
+
+# display3.configure(text=count)
+
 
 def checkSpeed(ftime, img):
     for v in vehicles:
@@ -237,9 +307,10 @@ VideoFileOutput = cv2.VideoWriter(filename, codec, framerate, resolution)
 vs = WebcamVideoStream(src='Set01_video01.mp4').start()
 '''
 
-cap = cv2.VideoCapture('C:\\Users\Andrej\\aPytonWork\\traffic_01.avi')  # 0 stands for very first webcam attach
+cap = cv2.VideoCapture('/home/aiuser/Downloads/traffic_01.avi')  # 0 stands for very first webcam attach
+#cap = cv2.VideoCapture('traffic_4.mp4')  # 0 stands for very first webcam attach
 
-for i in range(22):
+for i in range(20):
     ret, imgF = cap.read(0)
 imgF = Image.fromarray(imgF)
 im_width, im_height = imgF.size
@@ -299,6 +370,7 @@ detection_scores = detection_graph.get_tensor_by_name('detection_scores:0')
 detection_classes = detection_graph.get_tensor_by_name('detection_classes:0')
 num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
+'''
 # Tkinter — кросс-платформенная графическая библиотека на основе средств Tk.
 window = tk.Tk()  # Makes main window
 window.wm_title("Monitor")
@@ -318,33 +390,52 @@ frame2.rowconfigure(1, {'minsize': 250})
 frame3.rowconfigure(1, {'minsize': 80})
 frame4.rowconfigure(1, {'minsize': 150})
 frame5.rowconfigure(1, {'minsize': 80})
+'''
 
 
 def main(sess=sesser):
     ''' global masterframe
 	global started '''
 
-    if True:
-        fTime = time.time()
+    global trackers
+    global vehicles
+
+    while True:
+        # if True:
+        # fTime = time.time()
         _, image_np = cap.read(0)
         print(cap.get(1))
-        time.sleep(0.05)
         # image_np = imutils.resize(image_np, width=400)
-
         # Definite input and output Tensors for detection_graph
-
         # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
         image_np_expanded = np.expand_dims(image_np, axis=0)
         # Actual detection.
-        #t1 = time.time()
+        # t1 = time.time()
         (boxes, scores, classes, num) = sess.run(
             [detection_boxes, detection_scores, detection_classes, num_detections],
             feed_dict={image_tensor: image_np_expanded})
-        #t2 = time.time()
-        #print(t2-t1)
+        # t2 = time.time()
+        # print(t2-t1)
+        print("{} {}".format("vehicles -> ", len(vehicles)))
+        print("{} {}".format("trackers -> ", len(trackers)))
+        # После того как модель выдала нам новые боксы очищаем список трэкеров
+        trackers.clear()
+        #print(len(trackers))
+        # Удаляем устаревшие обьекты из vehicles
+        # вот это безумие(с введением временного списка) мне пришлось сделать с целью удаления из vehicles тех
+        # обьектов которые не отслеживаются (getTracking()=False), для этого я создал временный список в который
+        # итеративно занёс обьекты отслеживаемые, и перезаписал список vehicles.
+        if cap.get(1) % 5 == 0:
+            temp_vehicles_list = []
+            for v in vehicles:
+                if v.getTracking() == True:
+                    temp_vehicles_list.append(v)
+            vehicles = temp_vehicles_list
+
         # Visualization of the results of a detection.
-        img = image_np
-        imgF, coords = vis_util.visualize_boxes_and_labels_on_image_array(
+        # img = image_np
+        '''
+        imgF, bbox_track_list = vis_util.visualize_boxes_and_labels_on_image_array(
             image_np,
             np.squeeze(boxes),
             np.squeeze(classes).astype(np.int32),
@@ -352,35 +443,75 @@ def main(sess=sesser):
             category_index,
             use_normalized_coordinates=True,
             line_thickness=2)
+        '''
+        # моя инновация часть первая: после того как модель передаст нам боксы, мы создаём для каждого бокса трэкеры
+        image_np, trackers = getTrackers(image_np,
+                                         np.squeeze(boxes),
+                                         np.squeeze(classes).astype(np.int32),
+                                         np.squeeze(scores),
+                                         category_index,
+                                         max_boxes_to_draw=20,
+                                         min_score_thresh=.5,
+                                         )
 
-        matchVehicles(coords, im_width, im_height, imgF)
-        checkRedLightCrossed(imgF)
-        #checkSpeed(fTime, img)
-    # для каждого из обьектов(машина), после того как информация о нём была обновлена (matchVehicles), рисуются все его
-        # поинты (точки центроидов).
-        for v in vehicles:
-            if v.getTracking() == True:
+        # моя инновация часть вторая: для последующих n кадров, извлекаем боксы из трекеров в список bbox_track_list
+        # рисуем на фрэйме боксы и передаём bbox_track_list для последующей обработки.
+        for i in range(5):
+            bbox_track_list = []
+            _, image_np = cap.read(0)
+            for j in range(len(trackers)):
+                ok, bbox = trackers[j].update(image_np)
+                if ok:
+                    bbox_track_list.append(bbox)
+                '''
+                else:
+                    trackers[j].release()
+                '''
+                # рисуем на фрэйме бокс
+                if ok:
+                    p1 = (int(bbox[0]), int(bbox[1]))
+                    p2 = (int(bbox[0] + bbox[2]), int(bbox[1] + bbox[3]))
+                    cv2.rectangle(image_np, p1, p2, (255, 0, 0), 2, 1)
 
-                for p in v.getPoints():
-                    cv2.circle(image_np, p, 3, (200, 150, 75), 6)
+            # print("{} {}".format("bbox_track_list -> ", bbox_track_list))
+            # print("{} {}".format("vehicles -> ", len(vehicles)))
+            # print("{} {}".format("trackers -> ", len(trackers)))
 
-        # print(ymin*im_height,xmin*im_width,ymax*im_height,xmax*im_width)
-        # cv2.rectangle(image_np,(int(xmin*im_width),int(ymin*im_height)),(int(xmax*im_width),int(ymax*im_height)),(255,0,0),2)
-        cv2.line(image_np, (int(xl1), int(yl1)), (int(xl2), int(yl2)), (0, 255, 0), 3)
-        cv2.line(image_np, (int(xl3), int(yl3)), (int(xl4), int(yl4)), (0, 0, 255), 3)
-        cv2.line(image_np, (int(xl5), int(yl5)), (int(xl6), int(yl6)), (255, 0, 0), 3)
-        # VideoFileOutput.write(image_np)  # Запускает запись видео в файл, на данный момент эта опция не нужна
+            matchVehicles(bbox_track_list, im_width, im_height, image_np)
+            #checkRegionCrossed(img)
+            # checkRedLightCrossed(imgF)
+            # checkSpeed(fTime, img)
 
-        # Ресайз фрейма под габариты визуализации, и визуализация.
-        frame = cv2.resize(image_np, (720, 480))
-        cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-        img = Image.fromarray(cv2image)
-        imgtk = ImageTk.PhotoImage(image=img)
-        display1.imgtk = imgtk  # Shows frame for display 1
-        display1.configure(image=imgtk)
-    window.after(1, main)
+            # для каждого из обьектов(машина), после того как информация о нём была обновлена (matchVehicles), рисуются все его
+            # поинты (точки центроидов).
+            for v in vehicles:
+                if v.getTracking() == True:
+                    for p in v.getPoints():
+                        cv2.circle(image_np, p, 3, (200, 150, 75), 6)
 
+                # print(ymin*im_height,xmin*im_width,ymax*im_height,xmax*im_width)
+                # cv2.rectangle(image_np,(int(xmin*im_width),int(ymin*im_height)),(int(xmax*im_width),int(ymax*im_height)),(255,0,0),2)
+            cv2.line(image_np, (int(xl1), int(yl1)), (int(xl2), int(yl2)), (0, 255, 0), 3)
+            cv2.line(image_np, (int(xl3), int(yl3)), (int(xl4), int(yl4)), (0, 0, 255), 3)
+            cv2.line(image_np, (int(xl5), int(yl5)), (int(xl6), int(yl6)), (255, 0, 0), 3)
+            # VideoFileOutput.write(image_np)  # Запускает запись видео в файл, на данный момент эта опция не нужна
+            # Ресайз фрейма под габариты визуализации, и визуализация.
+            frame = cv2.resize(image_np, (720, 480))
+            k = cv2.waitKey(1) & 0xff
+            if k == 27: break
+            cv2.imshow("Tracker", frame)
 
+            # cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+            # img = Image.fromarray(cv2image)
+            # imgtk = ImageTk.PhotoImage(image=img)
+            # display1.imgtk = imgtk  # Shows frame for display 1
+            # display1.configure(image=imgtk)
+            # print('count -> '), print(count)
+            # print('vehicles -> '), print(len(vehicles))
+
+    # window.after(1, main)
+
+'''
 # Tkinter — кросс-платформенная графическая библиотека на основе средств Tk.
 lbl1 = tk.Label(frame, text='Vehicle Detection And Tracking', font="verdana 12 bold")
 lbl1.pack(side='top')
@@ -402,9 +533,58 @@ display4 = tk.Label(frame4)
 display4.grid(row=1, column=0)
 display5 = tk.Label(frame5, text="", font="verdana 24 bold", fg='green')
 display5.grid(row=1, column=0)
+'''
 
 masterframe = None
 started = False
+
+
+def getTrackers(image,
+                boxes,
+                classes,
+                scores,
+                category_index,
+                use_normalized_coordinates=False,
+                max_boxes_to_draw=20,
+                min_score_thresh=.5,
+                agnostic_mode=False,
+                ):
+
+    global trackers
+
+    if not max_boxes_to_draw:
+        max_boxes_to_draw = boxes.shape[0]
+    # для каждого бокаса полученного от модели (или max_boxes_to_draw), при условии что scores бокса больше чем
+    # min_score_thresh: переводим координаты бокса из относительных в нормализированные, при этом задаём не нижнюю
+    # точку, а длину и ширину (что требуется для трекеров)
+    for i in range(min(max_boxes_to_draw, boxes.shape[0])):
+        if scores is None or scores[i] > min_score_thresh:
+            box = tuple(boxes[i].tolist())
+            (y1, x1, y2, x2) = box
+            (x, y, w, h) = (
+                x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
+
+            # создаём и инициализируем трэкер
+            # test two different trackers KCF and MedianFlow. при тесте GOTURN, обязательно добавь goturn.caffemodel
+            # и goturn.prototxt из папки /home/aiuser/Andreas_Study/vehicle_counting/goturn-files-master
+            tracker = cv2.TrackerKCF_create()
+            #tracker = cv2.TrackerMedianFlow_create()
+            #tracker = cv2.TrackerGOTURN_create()
+            tracker.init(image, (x, y, w, h))
+
+            # рисуем на фрэйме бокс
+
+            p1 = (int(x), int(y))
+            p2 = (int(x+w), int(y+h))
+            cv2.rectangle(image, p1, p2, (255, 0, 0), 2, 1)
+
+
+
+            # добавляем трэкер в лист трэкеров
+            trackers.append(tracker)
+
+    return image, trackers  # возможно, нет смысла возвращать лист trackers так как нам не надо его возвращать: это
+    # глобальная переменная, если мы вынесем эту функцию в отдельный файл, тогда стоит сделать его возвращамемым..
 
 
 def stream():
@@ -421,8 +601,10 @@ def stream():
 '''thread = threading.Thread(target=stream)
 thread.daemon = True
 thread.start()'''
+
+
 with detection_graph.as_default():
     with tf.Session(graph=detection_graph) as sess:
         sesser = sess
         main(sess)  # Display
-window.mainloop()  # Starts GUI
+# window.mainloop()  # Starts GUI

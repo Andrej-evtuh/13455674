@@ -307,10 +307,9 @@ VideoFileOutput = cv2.VideoWriter(filename, codec, framerate, resolution)
 vs = WebcamVideoStream(src='Set01_video01.mp4').start()
 '''
 
-cap = cv2.VideoCapture('/home/aiuser/Downloads/traffic_01.avi')  # 0 stands for very first webcam attach
-#cap = cv2.VideoCapture('traffic_4.mp4')  # 0 stands for very first webcam attach
+cap = cv2.VideoCapture('traffic_4.mp4')  # 0 stands for very first webcam attach
 
-for i in range(20):
+for i in range(22):
     ret, imgF = cap.read(0)
 imgF = Image.fromarray(imgF)
 im_width, im_height = imgF.size
@@ -450,23 +449,19 @@ def main(sess=sesser):
                                          np.squeeze(classes).astype(np.int32),
                                          np.squeeze(scores),
                                          category_index,
-                                         max_boxes_to_draw=20,
+                                         max_boxes_to_draw=10,
                                          min_score_thresh=.5,
                                          )
 
         # моя инновация часть вторая: для последующих n кадров, извлекаем боксы из трекеров в список bbox_track_list
-        # рисуем на фрэйме боксы и передаём bbox_track_list для последующей обработки.
-        for i in range(5):
+        # и передаём этот лист для последующей обработки.
+        for i in range(20):
             bbox_track_list = []
             _, image_np = cap.read(0)
             for j in range(len(trackers)):
                 ok, bbox = trackers[j].update(image_np)
                 if ok:
                     bbox_track_list.append(bbox)
-                '''
-                else:
-                    trackers[j].release()
-                '''
                 # рисуем на фрэйме бокс
                 if ok:
                     p1 = (int(bbox[0]), int(bbox[1]))
@@ -564,21 +559,10 @@ def getTrackers(image,
             (x, y, w, h) = (
                 x1 * im_width, y1 * im_height, x2 * im_width - x1 * im_width, y2 * im_height - y1 * im_height)
 
-            # создаём и инициализируем трэкер
-            # test two different trackers KCF and MedianFlow. при тесте GOTURN, обязательно добавь goturn.caffemodel
-            # и goturn.prototxt из папки /home/aiuser/Andreas_Study/vehicle_counting/goturn-files-master
+            # создаём и инициализируем трэкер проверяем MedianFlow и KCF трекеры
+            tracker = cv2.TrackerMedianFlow_create()
             tracker = cv2.TrackerKCF_create()
-            #tracker = cv2.TrackerMedianFlow_create()
-            #tracker = cv2.TrackerGOTURN_create()
             tracker.init(image, (x, y, w, h))
-
-            # рисуем на фрэйме бокс
-
-            p1 = (int(x), int(y))
-            p2 = (int(x+w), int(y+h))
-            cv2.rectangle(image, p1, p2, (255, 0, 0), 2, 1)
-
-
 
             # добавляем трэкер в лист трэкеров
             trackers.append(tracker)

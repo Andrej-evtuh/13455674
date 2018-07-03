@@ -65,9 +65,8 @@ class vehicle:
         return self.rect
 
 
-
-
     def __init__(self,rect=[]):
+
         self.points=[]
         self.rect=rect
         self.crossed=False

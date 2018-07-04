@@ -279,9 +279,9 @@ def checkSpeed(ftime, img):
                 cv2image2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGBA)
                 img2 = Image.fromarray(cv2image2)
                 imgtk2 = ImageTk.PhotoImage(image=img2)
-                display2.imgtk = imgtk2  # Shows frame for display 1
-                display2.configure(image=imgtk2)
-                display3.configure(text=str(speed)[:5] + 'Km/hr')
+                #display2.imgtk = imgtk2  # Shows frame for display 1
+                #display2.configure(image=imgtk2)
+                #display3.configure(text=str(speed)[:5] + 'Km/hr')
                 if speed > 60:
                     # cv2.imshow('BROKE',bimg)
                     name = 'Rule Breakers/culprit' + str(time.time()) + '.jpg'
@@ -311,6 +311,24 @@ cap = cv2.VideoCapture('traffic_4.mp4')  # 0 stands for very first webcam attach
 
 for i in range(22):
     ret, imgF = cap.read(0)
+
+'''
+#manual select points, should be removed later
+ox = cv2.selectROI(imgF, False)
+print(ox)
+
+'''
+xroi1 = 450
+yroi1 = 600
+xroi2 = 770
+yroi2 = 350
+xroi3 = 1000
+yroi3 = 350
+xroi4 = 950
+yroi4 = 600
+
+
+
 imgF = Image.fromarray(imgF)
 im_width, im_height = imgF.size
 xl1 = 0
@@ -489,6 +507,12 @@ def main(sess=sesser):
             cv2.line(image_np, (int(xl1), int(yl1)), (int(xl2), int(yl2)), (0, 255, 0), 3)
             cv2.line(image_np, (int(xl3), int(yl3)), (int(xl4), int(yl4)), (0, 0, 255), 3)
             cv2.line(image_np, (int(xl5), int(yl5)), (int(xl6), int(yl6)), (255, 0, 0), 3)
+            #my roi
+            cv2.line(image_np, (int(xroi1), int(yroi1)), (int(xroi2), int(yroi2)), (0, 255, 0), 3)
+            cv2.line(image_np, (int(xroi2), int(yroi2)), (int(xroi3), int(yroi3)), (0, 255, 0), 3)
+            cv2.line(image_np, (int(xroi3), int(yroi3)), (int(xroi4), int(yroi4)), (0, 255, 0), 3)
+            cv2.line(image_np, (int(xroi4), int(yroi4)), (int(xroi1), int(yroi1)), (0, 255, 0), 3)
+
             # VideoFileOutput.write(image_np)  # Запускает запись видео в файл, на данный момент эта опция не нужна
             # Ресайз фрейма под габариты визуализации, и визуализация.
             frame = cv2.resize(image_np, (720, 480))
